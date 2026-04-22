@@ -55,6 +55,7 @@ export { isSubagentSessionKey } from "../routing/session-key.js";
 export { acquireSessionWriteLock } from "../agents/session-write-lock.js";
 export { emitSessionTranscriptUpdate } from "../sessions/transcript-events.js";
 export {
+  agentHarnessHasLifecycleHook,
   runAgentHarnessAgentEndHook,
   runAgentHarnessLlmInputHook,
   runAgentHarnessLlmOutputHook,

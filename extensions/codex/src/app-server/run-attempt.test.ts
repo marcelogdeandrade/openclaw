@@ -191,6 +191,19 @@ describe("runCodexAppServerAttempt", () => {
     await fs.rm(tempDir, { recursive: true, force: true });
   });
 
+  it("skips mirrored session history reads when llm_input hooks are absent", async () => {
+    const sessionFile = path.join(tempDir, "session.jsonl");
+    const workspaceDir = path.join(tempDir, "workspace");
+    const openSpy = vi.spyOn(SessionManager, "open");
+    const harness = createStartedThreadHarness();
+
+    const run = runCodexAppServerAttempt(createParams(sessionFile, workspaceDir));
+    await harness.waitForMethod("turn/start");
+    expect(openSpy).not.toHaveBeenCalled();
+    await harness.completeTurn({ threadId: "thread-1", turnId: "turn-1" });
+    await run;
+  });
+
   it("fires llm_input, llm_output, and agent_end hooks for codex turns", async () => {
     const llmInput = vi.fn();
     const llmOutput = vi.fn();

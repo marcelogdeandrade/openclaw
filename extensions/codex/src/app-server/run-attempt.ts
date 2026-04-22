@@ -1,6 +1,7 @@
 import fs from "node:fs/promises";
 import { SessionManager } from "@mariozechner/pi-coding-agent";
 import {
+  agentHarnessHasLifecycleHook,
   buildEmbeddedAttemptToolRunContext,
   clearActiveEmbeddedRun,
   createOpenClawCodingTools,
@@ -208,23 +209,24 @@ export async function runCodexAppServerAttempt(
     trigger: params.trigger,
     channelId: params.messageChannel ?? params.messageProvider ?? undefined,
   };
-  const llmInputEvent = {
-    runId: params.runId,
-    sessionId: params.sessionId,
-    provider: params.provider,
-    model: params.modelId,
-    systemPrompt: buildDeveloperInstructions(params),
-    prompt: params.prompt,
-    historyMessages: readMirroredSessionHistoryMessages(params.sessionFile),
-    imagesCount: params.images?.length ?? 0,
-  };
 
   let turn: CodexTurnStartResponse;
   try {
-    runAgentHarnessLlmInputHook({
-      event: llmInputEvent,
-      ctx: hookContext,
-    });
+    if (agentHarnessHasLifecycleHook("llm_input")) {
+      runAgentHarnessLlmInputHook({
+        event: {
+          runId: params.runId,
+          sessionId: params.sessionId,
+          provider: params.provider,
+          model: params.modelId,
+          systemPrompt: buildDeveloperInstructions(params),
+          prompt: params.prompt,
+          historyMessages: readMirroredSessionHistoryMessages(params.sessionFile),
+          imagesCount: params.images?.length ?? 0,
+        },
+        ctx: hookContext,
+      });
+    }
     turn = await client.request<CodexTurnStartResponse>(
       "turn/start",
       buildTurnStartParams(params, {

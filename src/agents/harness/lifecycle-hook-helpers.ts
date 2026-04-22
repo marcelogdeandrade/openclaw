@@ -33,12 +33,18 @@ function buildAgentHookContext(params: AgentHarnessHookContext): PluginHookAgent
   };
 }
 
+export function agentHarnessHasLifecycleHook(
+  hookName: "llm_input" | "llm_output" | "agent_end",
+): boolean {
+  return getGlobalHookRunner()?.hasHooks(hookName) ?? false;
+}
+
 export function runAgentHarnessLlmInputHook(params: {
   event: PluginHookLlmInputEvent;
   ctx: AgentHarnessHookContext;
 }): void {
   const hookRunner = getGlobalHookRunner();
-  if (!hookRunner?.hasHooks("llm_input")) {
+  if (!hookRunner || !agentHarnessHasLifecycleHook("llm_input")) {
     return;
   }
   void hookRunner.runLlmInput(params.event, buildAgentHookContext(params.ctx)).catch((error) => {
@@ -51,7 +57,7 @@ export function runAgentHarnessLlmOutputHook(params: {
   ctx: AgentHarnessHookContext;
 }): void {
   const hookRunner = getGlobalHookRunner();
-  if (!hookRunner?.hasHooks("llm_output")) {
+  if (!hookRunner || !agentHarnessHasLifecycleHook("llm_output")) {
     return;
   }
   void hookRunner.runLlmOutput(params.event, buildAgentHookContext(params.ctx)).catch((error) => {
@@ -64,7 +70,7 @@ export function runAgentHarnessAgentEndHook(params: {
   ctx: AgentHarnessHookContext;
 }): void {
   const hookRunner = getGlobalHookRunner();
-  if (!hookRunner?.hasHooks("agent_end")) {
+  if (!hookRunner || !agentHarnessHasLifecycleHook("agent_end")) {
     return;
   }
   void hookRunner.runAgentEnd(params.event, buildAgentHookContext(params.ctx)).catch((error) => {
