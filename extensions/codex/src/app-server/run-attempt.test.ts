@@ -53,6 +53,26 @@ function turnStartResult(turnId = "turn-1", status = "inProgress") {
   return { turn: { id: turnId, status } };
 }
 
+function assistantMessage(text: string, timestamp: number) {
+  return {
+    role: "assistant" as const,
+    content: [{ type: "text" as const, text }],
+    api: "openai-codex-responses",
+    provider: "openai-codex",
+    model: "gpt-5.4-codex",
+    usage: {
+      input: 0,
+      output: 0,
+      cacheRead: 0,
+      cacheWrite: 0,
+      totalTokens: 0,
+      cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+    },
+    stopReason: "stop" as const,
+    timestamp,
+  };
+}
+
 function createAppServerHarness(
   requestImpl: (method: string, params: unknown) => Promise<unknown>,
   options: { onStart?: (authProfileId: string | undefined) => void } = {},
@@ -185,11 +205,7 @@ describe("runCodexAppServerAttempt", () => {
     const sessionFile = path.join(tempDir, "session.jsonl");
     const workspaceDir = path.join(tempDir, "workspace");
     const sessionManager = SessionManager.open(sessionFile);
-    sessionManager.appendMessage({
-      role: "assistant",
-      content: [{ type: "text", text: "existing context" }],
-      timestamp: Date.now(),
-    });
+    sessionManager.appendMessage(assistantMessage("existing context", Date.now()));
     const harness = createStartedThreadHarness();
 
     const run = runCodexAppServerAttempt(createParams(sessionFile, workspaceDir));
@@ -302,6 +318,52 @@ describe("runCodexAppServerAttempt", () => {
         runId: "run-1",
         sessionId: "session-1",
       }),
+    );
+  });
+
+  it("fires llm_output and agent_end when turn/start fails", async () => {
+    const llmInput = vi.fn();
+    const llmOutput = vi.fn();
+    const agentEnd = vi.fn();
+    initializeGlobalHookRunner(
+      createMockPluginRegistry([
+        { hookName: "llm_input", handler: llmInput },
+        { hookName: "llm_output", handler: llmOutput },
+        { hookName: "agent_end", handler: agentEnd },
+      ]),
+    );
+    createStartedThreadHarness(async (method) => {
+      if (method === "turn/start") {
+        throw new Error("turn start exploded");
+      }
+      return undefined;
+    });
+
+    await expect(
+      runCodexAppServerAttempt(
+        createParams(path.join(tempDir, "session.jsonl"), path.join(tempDir, "workspace")),
+      ),
+    ).rejects.toThrow("turn start exploded");
+
+    await vi.waitFor(() => expect(llmInput).toHaveBeenCalledTimes(1), { interval: 1 });
+    await vi.waitFor(() => expect(llmOutput).toHaveBeenCalledTimes(1), { interval: 1 });
+    await vi.waitFor(() => expect(agentEnd).toHaveBeenCalledTimes(1), { interval: 1 });
+    expect(llmOutput).toHaveBeenCalledWith(
+      expect.objectContaining({
+        assistantTexts: [],
+        model: "gpt-5.4-codex",
+        provider: "codex",
+        runId: "run-1",
+        sessionId: "session-1",
+      }),
+      expect.any(Object),
+    );
+    expect(agentEnd).toHaveBeenCalledWith(
+      expect.objectContaining({
+        success: false,
+        error: "turn start exploded",
+      }),
+      expect.any(Object),
     );
   });
 

@@ -198,29 +198,32 @@ export async function runCodexAppServerAttempt(
     return toolBridge.handleToolCall(call) as Promise<JsonValue>;
   });
 
+  const hookContext = {
+    runId: params.runId,
+    agentId: sessionAgentId,
+    sessionKey: params.sessionKey,
+    sessionId: params.sessionId,
+    workspaceDir: params.workspaceDir,
+    messageProvider: params.messageProvider ?? undefined,
+    trigger: params.trigger,
+    channelId: params.messageChannel ?? params.messageProvider ?? undefined,
+  };
+  const llmInputEvent = {
+    runId: params.runId,
+    sessionId: params.sessionId,
+    provider: params.provider,
+    model: params.modelId,
+    systemPrompt: buildDeveloperInstructions(params),
+    prompt: params.prompt,
+    historyMessages: readMirroredSessionHistoryMessages(params.sessionFile),
+    imagesCount: params.images?.length ?? 0,
+  };
+
   let turn: CodexTurnStartResponse;
   try {
     runAgentHarnessLlmInputHook({
-      event: {
-        runId: params.runId,
-        sessionId: params.sessionId,
-        provider: params.provider,
-        model: params.modelId,
-        systemPrompt: buildDeveloperInstructions(params),
-        prompt: params.prompt,
-        historyMessages: readMirroredSessionHistoryMessages(params.sessionFile),
-        imagesCount: params.images?.length ?? 0,
-      },
-      ctx: {
-        runId: params.runId,
-        agentId: sessionAgentId,
-        sessionKey: params.sessionKey,
-        sessionId: params.sessionId,
-        workspaceDir: params.workspaceDir,
-        messageProvider: params.messageProvider ?? undefined,
-        trigger: params.trigger,
-        channelId: params.messageChannel ?? params.messageProvider ?? undefined,
-      },
+      event: llmInputEvent,
+      ctx: hookContext,
     });
     turn = await client.request<CodexTurnStartResponse>(
       "turn/start",
@@ -232,6 +235,25 @@ export async function runCodexAppServerAttempt(
       { timeoutMs: params.timeoutMs, signal: runAbortController.signal },
     );
   } catch (error) {
+    runAgentHarnessLlmOutputHook({
+      event: {
+        runId: params.runId,
+        sessionId: params.sessionId,
+        provider: params.provider,
+        model: params.modelId,
+        assistantTexts: [],
+      },
+      ctx: hookContext,
+    });
+    runAgentHarnessAgentEndHook({
+      event: {
+        messages: [],
+        success: false,
+        error: formatErrorMessage(error),
+        durationMs: Date.now() - attemptStartedAt,
+      },
+      ctx: hookContext,
+    });
     notificationCleanup();
     requestCleanup();
     params.abortSignal?.removeEventListener("abort", abortFromUpstream);
@@ -301,16 +323,7 @@ export async function runCodexAppServerAttempt(
         ...(result.lastAssistant ? { lastAssistant: result.lastAssistant } : {}),
         ...(result.attemptUsage ? { usage: result.attemptUsage } : {}),
       },
-      ctx: {
-        runId: params.runId,
-        agentId: sessionAgentId,
-        sessionKey: params.sessionKey,
-        sessionId: params.sessionId,
-        workspaceDir: params.workspaceDir,
-        messageProvider: params.messageProvider ?? undefined,
-        trigger: params.trigger,
-        channelId: params.messageChannel ?? params.messageProvider ?? undefined,
-      },
+      ctx: hookContext,
     });
     runAgentHarnessAgentEndHook({
       event: {
@@ -319,16 +332,7 @@ export async function runCodexAppServerAttempt(
         ...(result.promptError ? { error: formatErrorMessage(result.promptError) } : {}),
         durationMs: Date.now() - attemptStartedAt,
       },
-      ctx: {
-        runId: params.runId,
-        agentId: sessionAgentId,
-        sessionKey: params.sessionKey,
-        sessionId: params.sessionId,
-        workspaceDir: params.workspaceDir,
-        messageProvider: params.messageProvider ?? undefined,
-        trigger: params.trigger,
-        channelId: params.messageChannel ?? params.messageProvider ?? undefined,
-      },
+      ctx: hookContext,
     });
     return {
       ...result,
